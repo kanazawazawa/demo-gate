@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "demo-gate"
+version = "0.1.0"
+description = "Lightweight shared-key access gate for FastAPI-based demo apps"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Tatsutaka Kanazawa" }]
+keywords = ["fastapi", "starlette", "middleware", "access-gate", "demo", "authentication"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+dependencies = [
+    "fastapi>=0.100",
+    "starlette>=0.27",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7",
+    "httpx>=0.25",
+]
+
+[project.urls]
+Homepage = "https://github.com/kanazawazawa/demo-gate"
+Repository = "https://github.com/kanazawazawa/demo-gate"
+Issues = "https://github.com/kanazawazawa/demo-gate/issues"
+Changelog = "https://github.com/kanazawazawa/demo-gate/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+demo_gate = ["static/*", "py.typed"]
