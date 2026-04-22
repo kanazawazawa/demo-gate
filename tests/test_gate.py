@@ -135,7 +135,8 @@ def test_guest_key_issues_guest_role(monkeypatch):
 
 def test_tampered_cookie_is_rejected(monkeypatch):
     monkeypatch.setenv("DEMO_ACCESS_KEY", "secret")
-    client = _make_client()
+    app = _make_app()
+    client = TestClient(app, base_url="https://testserver")
 
     # 正しく認証して Cookie を取得
     client.post("/api/demo-auth", json={"key": "secret"})
@@ -145,9 +146,13 @@ def test_tampered_cookie_is_rejected(monkeypatch):
     original = client.cookies.get("demo_access")
     parts = original.split(".")
     tampered = f"{parts[0]}.guest.{parts[2]}"
-    client.cookies.set("demo_access", tampered)
 
-    res = client.get("/", follow_redirects=False)
+    # 改ざん Cookie だけを持つ別クライアントで確認
+    # (httpx の版によって同一クライアントの cookies.set() 上書きが反映されない
+    #  ケースがあるため、新規 TestClient で cookie jar を作り直す)
+    tampered_client = TestClient(app, base_url="https://testserver")
+    tampered_client.cookies.set("demo_access", tampered)
+    res = tampered_client.get("/", follow_redirects=False)
     assert res.status_code == 302  # リダイレクトされる = 未認可扱い
 
 
