@@ -33,23 +33,34 @@ def ttl_for(role: str) -> int:
         return default
 
 
-def access_key_internal() -> str:
-    return os.environ.get("DEMO_ACCESS_KEY", "").strip()
+def _parse_keys(raw: str) -> list[str]:
+    """カンマ区切りの環境変数値を分割。空要素は捨てる。"""
+    return [k.strip() for k in raw.split(",") if k.strip()]
 
 
-def access_key_guest() -> str:
-    return os.environ.get("DEMO_ACCESS_KEY_GUEST", "").strip()
+def access_keys_internal() -> list[str]:
+    """``DEMO_ACCESS_KEY`` をカンマ区切りで解釈して返す。先頭がプライマリ。"""
+    return _parse_keys(os.environ.get("DEMO_ACCESS_KEY", ""))
+
+
+def access_keys_guest() -> list[str]:
+    """``DEMO_ACCESS_KEY_GUEST`` をカンマ区切りで解釈して返す。先頭がプライマリ。"""
+    return _parse_keys(os.environ.get("DEMO_ACCESS_KEY_GUEST", ""))
 
 
 def gate_enabled() -> bool:
-    return bool(access_key_internal() or access_key_guest())
+    return bool(access_keys_internal() or access_keys_guest())
 
 
 def _session_secret() -> bytes:
     explicit = os.environ.get("DEMO_SESSION_SECRET", "").strip()
     if explicit:
         return explicit.encode("utf-8")
-    seed = "demo-gate:" + access_key_internal() + "|" + access_key_guest()
+    # 環境変数の生値を種にする。単一キー運用時は v0.1.0 と同じ種になり、
+    # 既存の Cookie が無効化されない。
+    raw_internal = os.environ.get("DEMO_ACCESS_KEY", "").strip()
+    raw_guest = os.environ.get("DEMO_ACCESS_KEY_GUEST", "").strip()
+    seed = "demo-gate:" + raw_internal + "|" + raw_guest
     return hashlib.sha256(seed.encode("utf-8")).digest()
 
 
@@ -89,13 +100,18 @@ def verify_cookie(value: str | None) -> str | None:
 
 
 def verify_static_key(submitted: str) -> str | None:
-    """環境変数のキーと照合する (動的キーはここでは扱わない)。"""
+    """環境変数のキーと照合する (動的キーはここでは扱わない)。
+
+    カンマ区切りで複数キーが登録されている場合、全てのキーと照合する。
+    タイミング攻撃対策のため、一致後も残りを走査せずに早期 return で十分
+    (``compare_digest`` 自体が定数時間比較のため)。
+    """
     submitted_b = (submitted or "").encode("utf-8")
-    internal = access_key_internal()
-    guest = access_key_guest()
-    if internal and hmac.compare_digest(internal.encode("utf-8"), submitted_b):
-        return ROLE_INTERNAL
-    if guest and hmac.compare_digest(guest.encode("utf-8"), submitted_b):
-        return ROLE_GUEST
+    for key in access_keys_internal():
+        if hmac.compare_digest(key.encode("utf-8"), submitted_b):
+            return ROLE_INTERNAL
+    for key in access_keys_guest():
+        if hmac.compare_digest(key.encode("utf-8"), submitted_b):
+            return ROLE_GUEST
     return None
 

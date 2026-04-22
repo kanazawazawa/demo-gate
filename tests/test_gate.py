@@ -187,3 +187,45 @@ def test_extra_verifier_accepts_dynamic_key(monkeypatch):
     # verifier が None を返すキーは 401
     res = client.post("/api/demo-auth", json={"key": "unknown"})
     assert res.status_code == 401
+
+
+# --- 10. カンマ区切りで複数キー受け入れ (ローテーション用) ----------------------
+
+
+def test_comma_separated_keys_accept_all(monkeypatch):
+    monkeypatch.setenv("DEMO_ACCESS_KEY", "new-primary,old-secondary")
+    monkeypatch.setenv("DEMO_ACCESS_KEY_GUEST", "guest-a,guest-b")
+    client = _make_client()
+
+    # 新旧どちらの internal キーでも internal ロールで通る
+    res = client.post("/api/demo-auth", json={"key": "new-primary"})
+    assert res.status_code == 200
+    assert res.json() == {"ok": True, "role": "internal"}
+
+    client2 = _make_client()
+    res = client2.post("/api/demo-auth", json={"key": "old-secondary"})
+    assert res.status_code == 200
+    assert res.json() == {"ok": True, "role": "internal"}
+
+    # guest キーの片方も通る
+    client3 = _make_client()
+    res = client3.post("/api/demo-auth", json={"key": "guest-b"})
+    assert res.status_code == 200
+    assert res.json() == {"ok": True, "role": "guest"}
+
+
+# --- 11. 単一キー運用は v0.1.0 と同じ挙動 (後方互換) --------------------------
+
+
+def test_single_key_still_works_unchanged(monkeypatch):
+    monkeypatch.setenv("DEMO_ACCESS_KEY", "secret")
+    monkeypatch.delenv("DEMO_ACCESS_KEY_GUEST", raising=False)
+    client = _make_client()
+
+    res = client.post("/api/demo-auth", json={"key": "secret"})
+    assert res.status_code == 200
+    assert res.json() == {"ok": True, "role": "internal"}
+
+    # 空白やカンマ無しで従来どおり
+    res = client.post("/api/demo-auth", json={"key": "wrong"})
+    assert res.status_code == 401

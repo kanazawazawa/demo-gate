@@ -126,12 +126,27 @@ attach_demo_gate(app, extra_public_prefixes=("/healthz",))
 
 | 名前 | 意味 | デフォルト |
 |---|---|---|
-| `DEMO_ACCESS_KEY` | 社内メンバー向け合言葉 (internal ロール) | (未設定ならゲート無効) |
-| `DEMO_ACCESS_KEY_GUEST` | 静的ゲスト用合言葉 (guest ロール) | (未設定) |
+| `DEMO_ACCESS_KEY` | 社内メンバー向け合言葉 (internal ロール)。カンマ区切りで複数指定可 (キーローテーション用) | (未設定ならゲート無効) |
+| `DEMO_ACCESS_KEY_GUEST` | 静的ゲスト用合言葉 (guest ロール)。カンマ区切りで複数指定可 | (未設定) |
 | `DEMO_SESSION_SECRET` | Cookie 署名鍵。未設定ならキーから派生 | (派生) |
 | `DEMO_INTERNAL_TTL_HOURS` | internal Cookie の有効時間 | `168` (7日) |
 | `DEMO_GUEST_TTL_HOURS` | guest Cookie の有効時間 | `24` (1日) |
 | `DEMO_GATE_CONTACT` | ゲート画面に表示する連絡先名 | `管理者` |
+
+### キーローテーション
+
+合言葉が漏れた・定期的に切り替えたい場合、カンマ区切りで新旧両方を受け入れる期間を作れます:
+
+```bash
+# 移行期間中: 新旧どちらでもログイン可
+DEMO_ACCESS_KEY="new-primary-key,old-key-being-rotated-out"
+
+# 切り替え完了後: 旧キーを削除
+DEMO_ACCESS_KEY="new-primary-key"
+```
+
+`DEMO_SESSION_SECRET` を明示指定していれば、環境変数を書き換えても既存 Cookie は失効しません。
+未指定の場合、Cookie 署名鍵は環境変数値から派生するため、値を変えると既存セッションは全てログアウトされます。
 
 ## 開発
 
