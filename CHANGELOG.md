@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-23
+
+### Added
+- 保護対象パスのレスポンスに `Cache-Control: no-store` を付与。ログアウト後のブラウザ「戻る」操作で bfcache / disk cache から前回の HTML が復元される問題を修正
+
 ## [0.2.1] - 2026-04-23
 
 ### Changed

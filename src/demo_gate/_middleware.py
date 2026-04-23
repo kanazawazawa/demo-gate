@@ -52,7 +52,9 @@ class DemoAccessGateMiddleware(BaseHTTPMiddleware):
         if self._is_public(request.url.path):
             return await call_next(request)
         if verify_cookie(request.cookies.get(COOKIE_NAME)):
-            return await call_next(request)
+            response = await call_next(request)
+            response.headers["Cache-Control"] = "no-store"
+            return response
         if self._looks_like_api(request):
             return JSONResponse(
                 {"detail": "demo_access required", "gate": GATE_PATH}, status_code=401

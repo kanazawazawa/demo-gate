@@ -96,8 +96,13 @@ def test_login_with_correct_key_issues_cookie(monkeypatch):
     assert "demo_access" in client.cookies
 
     # Cookie が付いた状態でアクセス → ゲートを通過して本来の 200 が返る
-    assert client.get("/", follow_redirects=False).status_code == 200
-    assert client.get("/api/foo").status_code == 200
+    res = client.get("/", follow_redirects=False)
+    assert res.status_code == 200
+    assert res.headers["cache-control"] == "no-store"
+
+    res = client.get("/api/foo")
+    assert res.status_code == 200
+    assert res.headers["cache-control"] == "no-store"
 
 
 # --- 5. 間違ったキーを連打 → ブロック発動 -------------------------------------
