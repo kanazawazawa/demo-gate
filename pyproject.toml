@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "demo-gate"
-version = "0.2.0"
+version = "0.2.1"
 description = "Lightweight shared-key access gate for FastAPI-based demo apps"
 readme = "README.md"
 requires-python = ">=3.10"

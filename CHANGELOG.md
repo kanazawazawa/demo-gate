@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-04-23
+
+### Changed
+- ゲート画面の注釈を変更: 「本機能はデモ公開用の簡易認証です。本番環境には対応しておりません」の注意書きを追加
+- 注釈の文字色を濃く調整
+
 ## [0.2.0] - 2026-04-22
 
 ### Added
