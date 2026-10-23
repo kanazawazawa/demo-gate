@@ -14,6 +14,7 @@ attach_demo_gate(app)
 
 ## 対応範囲
 
+- **Python**: 3.14 以上。動作確認と CI は 3.14 系の最新パッチ版だけを対象にします
 - **対応**: FastAPI / Starlette (ASGI)
 - **非対応**: Flask, Django, Streamlit, Gradio など (別手段で保護すること)
 
@@ -55,9 +56,13 @@ attach_demo_gate(app)
 ## セキュリティ設計
 
 - Cookie は HMAC-SHA256 署名付き (HttpOnly / Secure / SameSite=Lax)
-- HMAC 比較は `secrets.compare_digest` で timing attack 耐性
-- 簡易ブルートフォース抑制 (同一 IP が 60 秒で 3 回失敗 → 5 分ブロック)
-- `DEMO_ACCESS_KEY` 未設定時はゲートは自動で無効 (素通し)
+- HTTPS / WSS で利用すること。HTTP と WebSocket の両方で Cookie を検証します
+- HMAC 比較は `hmac.compare_digest` で timing attack 耐性
+- 簡易ブルートフォース抑制 (同一 IP が 60 秒で 3 回試行 → 5 分ブロック。認証成功時にリセット)。並列試行も数えます
+- 制限状態はプロセス内のみ。複数ワーカー・複数インスタンスでは共有されません
+- ログイン後は常に `/` に移動します。`next` による遷移先の指定は受け付けません
+- ゲート画面の外部スクリプトは SRI で改変を検知します
+- `DEMO_ACCESS_KEY` と `DEMO_ACCESS_KEY_GUEST` が両方未設定の場合だけゲートは無効 (素通し)
 
 ---
 
@@ -66,8 +71,11 @@ attach_demo_gate(app)
 ### 1. インストール
 
 ```bash
-pip install "git+https://github.com/kanazawazawa/demo-gate.git@v0.1.0"
+python -m pip install --upgrade --upgrade-strategy eager demo-gate
 ```
+
+利用先アプリに依存の固定やロックファイルがある場合は、そちらも更新してください。
+更新後はアプリのテストを実行し、再デプロイします。
 
 ### 2. アプリに組み込む
 
@@ -90,6 +98,8 @@ az webapp config appsettings set ... --settings DEMO_ACCESS_KEY=your-secret
 ```bash
 openssl rand -base64 24
 ```
+
+`DEMO_SESSION_SECRET` も、合言葉とは別のランダムな値で設定することを推奨します。
 
 ## 動的なキーの差し込み (DB 連携など)
 
@@ -116,7 +126,7 @@ App Service の正常性チェックや Application Insights の可用性テス�
 async def healthz():
     return {"ok": True}
 
-attach_demo_gate(app, extra_public_prefixes=("/healthz",))
+attach_demo_gate(app, extra_public_exact=("/healthz",))
 ```
 
 なお SDK 経由のログ・メトリクス収集 (requests / traces / exceptions 等) は
@@ -126,7 +136,7 @@ attach_demo_gate(app, extra_public_prefixes=("/healthz",))
 
 | 名前 | 意味 | デフォルト |
 |---|---|---|
-| `DEMO_ACCESS_KEY` | 社内メンバー向け合言葉 (internal ロール)。カンマ区切りで複数指定可 (キーローテーション用) | (未設定ならゲート無効) |
+| `DEMO_ACCESS_KEY` | 社内メンバー向け合言葉 (internal ロール)。カンマ区切りで複数指定可 (キーローテーション用) | (guest キーも未設定ならゲート無効) |
 | `DEMO_ACCESS_KEY_GUEST` | 静的ゲスト用合言葉 (guest ロール)。カンマ区切りで複数指定可 | (未設定) |
 | `DEMO_SESSION_SECRET` | Cookie 署名鍵。未設定ならキーから派生 | (派生) |
 | `DEMO_INTERNAL_TTL_HOURS` | internal Cookie の有効時間 | `168` (7日) |
@@ -151,8 +161,16 @@ DEMO_ACCESS_KEY="new-primary-key"
 ## 開発
 
 ```bash
-pip install -e ".[test]"
-pytest
+python -m pip install --upgrade --upgrade-strategy eager -e ".[test]"
+python -m pytest -q
+```
+
+CI と同じビルド・Python 依存監査も実行する場合:
+
+```bash
+python -m pip install --upgrade setuptools wheel build pip-audit
+python -m build
+python -m pip_audit --strict --skip-editable
 ```
 
 ## 顧客にソースコードを配布する時
@@ -165,7 +183,8 @@ pytest
 
 ## メンテナンスポリシー
 
-- 本パッケージは作者のデモ運用のために作られた副産物です
-- 本格的なメンテナンスや破壊的変更への追従は保証しません
+- 作者個人のデモ運用に必要な、小さな実装を維持します。古い Python 向けの互換性や本格的な認証基盤の機能は増やしません
+- Dependabot が Python 依存と GitHub Actions の更新 PR をそれぞれ週次でまとめます。CI の結果を確認して手動でマージします
+- CI は push / PR / 週次 / 手動実行で最新の依存を解決し、テスト・ビルド・`pip-audit` を実行します。既知の脆弱性や監査エラーがあれば失敗させます
+- PyPI 公開前にもテストと監査を実行します。脆弱性を無視する設定や自動マージは追加しません
 - 重要な用途に使う場合は、自身で fork するか別手段を検討してください
-- issue / PR への対応は気まぐれです

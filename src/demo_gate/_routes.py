@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from starlette.responses import HTMLResponse, JSONResponse
 
 from ._middleware import clear_auth_cookie, current_role, set_auth_cookie
-from ._ratelimit import is_blocked, register_failure, register_success
+from ._ratelimit import allow_attempt, register_success
 from ._service import gate_enabled, verify_static_key
 
 logger = logging.getLogger(__name__)
@@ -66,7 +66,7 @@ def build_router(
             return JSONResponse({"ok": True, "enabled": False})
 
         ip = _client_ip(request)
-        if is_blocked(ip):
+        if not allow_attempt(ip):
             await asyncio.sleep(_BLOCKED_DELAY_SEC)
             return JSONResponse({"ok": False, "detail": "unauthorized"}, status_code=401)
 
@@ -80,7 +80,6 @@ def build_router(
                 logger.exception("demo-gate extra_verifier failed")
                 role = None
         if not role:
-            register_failure(ip)
             return JSONResponse({"ok": False, "detail": "unauthorized"}, status_code=401)
 
         register_success(ip)

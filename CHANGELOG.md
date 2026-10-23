@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-23
+
+### Security
+- HTTP 専用ミドルウェアを ASGI ミドルウェアに置き換え、WebSocket の未認証接続も拒否
+- 認証判断に ASGI の実パスを使い、組み込み認証 API の公開範囲を完全一致に限定
+- ログイン試行を待機・キー検証前にロック付きで数え、並列送信による制限超過を防止
+- ログイン後はトップへ固定し、`next` 経由の JavaScript 実行・外部リダイレクトを防止
+- ゲート画面の CDN スクリプトに SRI を追加
+
+### Changed
+- 最低 Python を 3.14 に引き上げ、CI も 3.14 の単一構成に変更
+- FastAPI / Starlette / ビルドツール / テスト依存の下限を更新し、ライセンス指定を SPDX 形式に変更
+- 週次の最新版テスト・ビルド・Python 依存監査と、グループ化した Dependabot 更新を追加
+- GitHub Actions を更新してコミット SHA に固定し、PyPI 公開前にもテスト・監査を実施
+- 導入例を PyPI の最新版更新に変更し、試行制限と保守方針を明記
+
 ## [0.3.0] - 2026-04-23
 
 ### Added

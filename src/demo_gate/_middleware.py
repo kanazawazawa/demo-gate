@@ -2,34 +2,38 @@
 
 from __future__ import annotations
 
-from typing import Awaitable, Callable, Iterable
+from typing import Iterable
 
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
+from starlette.datastructures import MutableHeaders
+from starlette.requests import HTTPConnection, Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ._service import COOKIE_NAME, gate_enabled, issue_cookie_value, ttl_for, verify_cookie
 
 GATE_PATH = "/demo-gate.html"
 
-_DEFAULT_PUBLIC_PREFIXES = (
-    "/api/demo-auth",  # パッケージ同梱の認証エンドポイント
+_DEFAULT_PUBLIC_EXACT = (
+    GATE_PATH,
+    "/favicon.ico",
+    "/api/demo-auth",
+    "/api/demo-auth/status",
+    "/api/demo-auth/logout",
 )
-_DEFAULT_PUBLIC_EXACT = (GATE_PATH, "/favicon.ico")
 
 
-class DemoAccessGateMiddleware(BaseHTTPMiddleware):
+class DemoAccessGateMiddleware:
     """合言葉ゲート Middleware (環境変数 `DEMO_ACCESS_KEY` 未設定時は素通し)."""
 
     def __init__(
         self,
-        app,
+        app: ASGIApp,
         *,
         extra_public_prefixes: Iterable[str] = (),
         extra_public_exact: Iterable[str] = (),
     ) -> None:
-        super().__init__(app)
-        self._public_prefixes = tuple(_DEFAULT_PUBLIC_PREFIXES) + tuple(extra_public_prefixes)
+        self.app = app
+        self._public_prefixes = tuple(extra_public_prefixes)
         self._public_exact = set(_DEFAULT_PUBLIC_EXACT) | set(extra_public_exact)
 
     def _is_public(self, path: str) -> bool:
@@ -38,28 +42,40 @@ class DemoAccessGateMiddleware(BaseHTTPMiddleware):
         return any(path.startswith(p) for p in self._public_prefixes)
 
     @staticmethod
-    def _looks_like_api(request: Request) -> bool:
-        if request.url.path.startswith("/api/"):
+    def _looks_like_api(request: HTTPConnection) -> bool:
+        if request.scope["path"].startswith("/api/"):
             return True
         accept = request.headers.get("accept", "")
         return "application/json" in accept and "text/html" not in accept
 
-    async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        if not gate_enabled():
-            return await call_next(request)
-        if self._is_public(request.url.path):
-            return await call_next(request)
-        if verify_cookie(request.cookies.get(COOKIE_NAME)):
-            response = await call_next(request)
-            response.headers["Cache-Control"] = "no-store"
-            return response
-        if self._looks_like_api(request):
-            return JSONResponse(
-                {"detail": "demo_access required", "gate": GATE_PATH}, status_code=401
-            )
-        return RedirectResponse(url=GATE_PATH, status_code=302)
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] not in ("http", "websocket") or not gate_enabled():
+            await self.app(scope, receive, send)
+            return
+        if self._is_public(scope["path"]):
+            await self.app(scope, receive, send)
+            return
+
+        request = HTTPConnection(scope)
+        if not verify_cookie(request.cookies.get(COOKIE_NAME)):
+            if scope["type"] == "websocket":
+                await send({"type": "websocket.close", "code": 1008})
+                return
+            if self._looks_like_api(request):
+                response = JSONResponse(
+                    {"detail": "demo_access required", "gate": GATE_PATH}, status_code=401
+                )
+            else:
+                response = RedirectResponse(url=GATE_PATH, status_code=302)
+            await response(scope, receive, send)
+            return
+
+        async def send_with_cache_control(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message)["Cache-Control"] = "no-store"
+            await send(message)
+
+        await self.app(scope, receive, send_with_cache_control)
 
 
 def current_role(request: Request) -> str | None:

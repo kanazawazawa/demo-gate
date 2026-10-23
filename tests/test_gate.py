@@ -6,9 +6,13 @@ FastAPI の TestClient で実際にリクエストを投げて挙動を確認す
 
 from __future__ import annotations
 
+import asyncio
+
+import httpx
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from demo_gate import attach_demo_gate
 from demo_gate import _ratelimit
@@ -17,7 +21,7 @@ from demo_gate import _ratelimit
 @pytest.fixture(autouse=True)
 def _reset_ratelimit():
     """各テスト前にレートリミットの内部 state をクリア。"""
-    _ratelimit._fail_log.clear()
+    _ratelimit._attempt_log.clear()
     _ratelimit._blocked_until.clear()
 
 
@@ -35,6 +39,12 @@ def _make_app(**kwargs) -> FastAPI:
     @app.get("/healthz")
     def healthz():
         return {"ok": True}
+
+    @app.websocket("/ws")
+    async def websocket_endpoint(websocket: WebSocket):
+        await websocket.accept()
+        await websocket.send_text("connected")
+        await websocket.close()
 
     attach_demo_gate(app, **kwargs)
     return app
@@ -239,3 +249,98 @@ def test_single_key_still_works_unchanged(monkeypatch):
     # 空白やカンマ無しで従来どおり
     res = client.post("/api/demo-auth", json={"key": "wrong"})
     assert res.status_code == 401
+
+
+@pytest.mark.parametrize("path", ["/api/demo-auth-extra", "/api/demo-auth/private"])
+def test_default_public_paths_are_exact(monkeypatch, path):
+    monkeypatch.setenv("DEMO_ACCESS_KEY", "secret")
+    app = _make_app()
+    app.add_api_route(path, lambda: {"private": True})
+    client = TestClient(app, base_url="https://testserver")
+
+    assert client.get(path).status_code == 401
+
+
+def test_malformed_host_does_not_change_authentication_path(monkeypatch):
+    monkeypatch.setenv("DEMO_ACCESS_KEY", "secret")
+    client = _make_client()
+
+    response = client.get(
+        "/api/foo", headers={"host": "testserver/demo-gate.html?ignored="}
+    )
+    assert response.status_code == 401
+
+
+def test_unauthenticated_websocket_is_rejected(monkeypatch):
+    monkeypatch.setenv("DEMO_ACCESS_KEY", "secret")
+    client = _make_client()
+
+    with pytest.raises(WebSocketDisconnect) as closed:
+        with client.websocket_connect("wss://testserver/ws"):
+            pass
+    assert closed.value.code == 1008
+
+
+@pytest.mark.parametrize("key", ["secret", "guest-secret"])
+def test_authenticated_websocket_is_allowed(monkeypatch, key):
+    monkeypatch.setenv("DEMO_ACCESS_KEY", "secret")
+    monkeypatch.setenv("DEMO_ACCESS_KEY_GUEST", "guest-secret")
+    client = _make_client()
+
+    assert client.post("/api/demo-auth", json={"key": key}).status_code == 200
+    with client.websocket_connect("wss://testserver/ws") as websocket:
+        assert websocket.receive_text() == "connected"
+
+
+def test_disabled_gate_allows_websocket(monkeypatch):
+    monkeypatch.delenv("DEMO_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("DEMO_ACCESS_KEY_GUEST", raising=False)
+    client = _make_client()
+
+    with client.websocket_connect("wss://testserver/ws") as websocket:
+        assert websocket.receive_text() == "connected"
+
+
+def test_parallel_login_attempts_are_limited(monkeypatch):
+    monkeypatch.setenv("DEMO_ACCESS_KEY", "secret")
+    verification_calls = 0
+
+    async def verifier(key: str) -> str | None:
+        nonlocal verification_calls
+        verification_calls += 1
+        return None
+
+    app = _make_app(extra_verifier=verifier)
+
+    async def submit_attempts():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="https://testserver"
+        ) as client:
+            return await asyncio.gather(
+                *(client.post("/api/demo-auth", json={"key": "wrong"}) for _ in range(8))
+            )
+
+    responses = asyncio.run(submit_attempts())
+    assert [response.status_code for response in responses] == [401] * 8
+    assert verification_calls == 3
+
+
+def test_rate_limit_expires_and_success_resets_attempts(monkeypatch):
+    now = 0.0
+    monkeypatch.setattr(_ratelimit.time, "monotonic", lambda: now)
+
+    assert all(_ratelimit.allow_attempt("test-ip") for _ in range(3))
+    assert not _ratelimit.allow_attempt("test-ip")
+
+    now = 301.0
+    assert _ratelimit.allow_attempt("test-ip")
+    _ratelimit.register_success("test-ip")
+    assert all(_ratelimit.allow_attempt("test-ip") for _ in range(3))
+
+
+def test_gate_page_always_redirects_to_root(monkeypatch):
+    monkeypatch.setenv("DEMO_ACCESS_KEY", "secret")
+    page = _make_client().get("/demo-gate.html?next=javascript:ignored").text
+
+    assert 'window.location.replace("/")' in page
+    assert "window.location.search" not in page
