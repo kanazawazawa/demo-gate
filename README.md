@@ -170,8 +170,11 @@ CI と同じビルド・Python 依存監査も実行する場合:
 ```bash
 python -m pip install --upgrade setuptools wheel build pip-audit
 python -m build
-python -m pip_audit --strict --skip-editable
+python -m pip list --format=freeze --exclude-editable > audit-requirements.txt
+python -m pip_audit --strict --no-deps --disable-pip -r audit-requirements.txt
 ```
+
+監査用ファイルは、editable インストールを除いた環境全体 (間接依存・ビルド・テスト用を含む) のスナップショットです。
 
 ## 顧客にソースコードを配布する時
 

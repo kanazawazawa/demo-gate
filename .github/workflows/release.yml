@@ -31,7 +31,8 @@ jobs:
       - name: Test and audit
         run: |
           python -m pytest -q
-          python -m pip_audit --strict --skip-editable
+          python -m pip list --format=freeze --exclude-editable > "$RUNNER_TEMP/audit-requirements.txt"
+          python -m pip_audit --strict --no-deps --disable-pip -r "$RUNNER_TEMP/audit-requirements.txt"
 
       - name: Build sdist and wheel
         run: python -m build

@@ -38,4 +38,6 @@ jobs:
         run: python -m build
 
       - name: Audit dependencies
-        run: python -m pip_audit --strict --skip-editable
+        run: |
+          python -m pip list --format=freeze --exclude-editable > "$RUNNER_TEMP/audit-requirements.txt"
+          python -m pip_audit --strict --no-deps --disable-pip -r "$RUNNER_TEMP/audit-requirements.txt"
